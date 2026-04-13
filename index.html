@@ -1,58 +1,143 @@
-function confirmSetup() {
-    guestName = document.getElementById('guest-name').value;
-    const file = document.getElementById('photo-input').files[0];
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Wedding Shake Race - Join</title>
+    <script src="https://www.gstatic.com/firebasejs/9.x.x/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.x.x/firebase-database-compat.js"></script>
     
-    if (!guestName || !file) {
-        alert("Please enter your name and upload a photo!");
-        return;
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; text-align: center; background: #fff5f7; margin: 0; padding: 20px; color: #333; }
+        .card { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 400px; margin: 0 auto; }
+        h1 { color: #ff4081; margin-bottom: 10px; }
+        input[type="text"] { width: 80%; padding: 12px; border: 2px solid #ddd; border-radius: 10px; font-size: 16px; margin-bottom: 20px; }
+        input[type="file"] { margin-bottom: 20px; }
+        .btn { padding: 15px 40px; font-size: 18px; background: #ff4081; color: white; border: none; border-radius: 50px; cursor: pointer; font-weight: bold; width: 100%; box-shadow: 0 4px 10px rgba(255, 64, 129, 0.3); }
+        #game-screen { display: none; }
+        #runner-preview { width: 100px; height: 100px; border-radius: 50%; border: 4px solid #ff4081; object-fit: cover; margin: 20px auto; display: block; }
+        #count { font-size: 80px; color: #ff4081; font-weight: bold; margin: 10px 0; }
+        #status { color: #888; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div id="setup-screen">
+        <h1>Wedding Race</h1>
+        <p>Enter your name and a selfie!</p>
+        <input type="text" id="guest-name" placeholder="Your Name" maxlength="12">
+        <input type="file" id="photo-input" accept="image/*">
+        <button class="btn" onclick="confirmSetup()">I'm Ready!</button>
+    </div>
+
+    <div id="game-screen">
+        <h2 id="welcome-msg">Ready?</h2>
+        <img id="runner-preview" src="">
+        <div id="count">0</div>
+        <div id="status">Hold tight... wait for the MC!</div>
+    </div>
+</div>
+
+<script>
+    // --- 1. CONFIGURATION ---
+    const firebaseConfig = {
+        apiKey: "YOUR_API_KEY",
+        authDomain: "YOUR_PROJECT.firebaseapp.com",
+        databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+        projectId: "YOUR_PROJECT",
+        storageBucket: "YOUR_PROJECT.appspot.com",
+        messagingSenderId: "YOUR_SENDER_ID",
+        appId: "YOUR_APP_ID"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    
+    let score = 0;
+    let isShaking = false;
+    let userId = "user_" + Math.random().toString(36).substr(2, 9);
+    let guestPhoto = "";
+
+    // --- 2. SETUP LOGIC (PHOTO RESIZE) ---
+    function confirmSetup() {
+        const nameInput = document.getElementById('guest-name').value;
+        const file = document.getElementById('photo-input').files[0];
+        
+        if (!nameInput || !file) {
+            alert("Please provide both name and photo!");
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                // Resize to 100x100 for fast syncing
+                const canvas = document.createElement('canvas');
+                canvas.width = 100;
+                canvas.height = 100;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, 100, 100);
+                
+                guestPhoto = canvas.toDataURL('image/jpeg', 0.7);
+                document.getElementById('runner-preview').src = guestPhoto;
+                
+                // Switch Screens
+                document.getElementById('setup-screen').style.display = 'none';
+                document.getElementById('game-screen').style.display = 'block';
+                document.getElementById('welcome-msg').innerText = "Ready, " + nameInput + "!";
+
+                // Save to Firebase
+                db.ref('players/' + userId).set({
+                    name: nameInput,
+                    photo: guestPhoto,
+                    score: 0
+                });
+
+                startSensors();
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
     }
 
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const img = new Image();
-        img.onload = function() {
-            // --- IMAGE RESIZING LOGIC ---
-            const canvas = document.createElement('canvas');
-            const MAX_WIDTH = 100;
-            const MAX_HEIGHT = 100;
-            let width = img.width;
-            let height = img.height;
+    // --- 3. SHAKE SENSOR LOGIC ---
+    function startSensors() {
+        if (typeof DeviceMotionEvent.requestPermission === 'function') {
+            DeviceMotionEvent.requestPermission()
+                .then(state => { if (state === 'granted') window.addEventListener('devicemotion', handleMotion); })
+                .catch(e => console.error(e));
+        } else {
+            window.addEventListener('devicemotion', handleMotion);
+        }
+    }
 
-            // Maintain aspect ratio
-            if (width > height) {
-                if (width > MAX_WIDTH) {
-                    height *= MAX_WIDTH / width;
-                    width = MAX_WIDTH;
-                }
-            } else {
-                if (height > MAX_HEIGHT) {
-                    width *= MAX_HEIGHT / height;
-                    height = MAX_HEIGHT;
-                }
-            }
+    function handleMotion(event) {
+        let acc = event.accelerationIncludingGravity;
+        if (!acc) return;
 
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
+        let totalAcc = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
+        const threshold = 18; // Increase this to make it harder/fairer
 
-            // Convert to a small, compressed JPEG
-            guestPhoto = canvas.toDataURL('image/jpeg', 0.7); 
-            
-            // Proceed with the game
-            document.getElementById('runner').src = guestPhoto;
-            document.getElementById('setup-screen').style.display = 'none';
-            document.getElementById('game-screen').style.display = 'block';
-            
-            firebase.database().ref('players/' + userId).set({
-                name: guestName,
-                photo: guestPhoto,
-                score: 0
-            });
-            
-            startSensors();
-        };
-        img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-}
+        if (totalAcc > threshold && !isShaking) {
+            score++;
+            isShaking = true;
+            document.getElementById('count').innerText = score;
+
+            // Sync score to Firebase
+            db.ref('players/' + userId).update({ score: score });
+
+            // Visual bounce effect
+            document.getElementById('runner-preview').style.transform = "scale(1.2)";
+            setTimeout(() => { 
+                isShaking = false; 
+                document.getElementById('runner-preview').style.transform = "scale(1.0)";
+            }, 100);
+        }
+    }
+</script>
+
+</body>
+</html>
