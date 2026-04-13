@@ -2,66 +2,108 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wedding Shake Game</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Wedding Shake Race</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #fff5f7; padding: 50px; color: #333; }
-        #count { font-size: 100px; color: #ff4081; margin: 20px 0; font-weight: bold; }
-        .btn { padding: 18px 36px; font-size: 22px; background: #ff4081; color: white; border: none; border-radius: 50px; cursor: pointer; box-shadow: 0 4px 15px rgba(255, 64, 129, 0.3); }
-        .btn:active { transform: scale(0.95); }
-        #status { color: #999; margin-top: 25px; font-size: 14px; }
+        body { font-family: 'Segoe UI', sans-serif; text-align: center; background: #fff5f7; padding: 20px; color: #333; overflow: hidden; }
+        
+        /* The Racetrack */
+        #track { position: relative; width: 100%; height: 150px; background: #eee; border-radius: 20px; margin: 20px 0; border: 4px solid #fff; box-shadow: inset 0 0 10px rgba(0,0,0,0.1); }
+        
+        /* The Running Character */
+        #runner { position: absolute; left: 0; bottom: 10px; height: 100px; width: auto; transition: left 0.1s linear; /* Smooth movement */ }
+        
+        /* The Finish Line */
+        #finish { position: absolute; right: 10px; top: 10px; bottom: 10px; width: 10px; background: repeating-linear-gradient(45deg, #000, #000 10px, #fff 10px, #fff 20px); }
+
+        #count { font-size: 40px; color: #ff4081; font-weight: bold; margin-top: 10px; }
+        .btn { padding: 18px 36px; font-size: 22px; background: #ff4081; color: white; border: none; border-radius: 50px; cursor: pointer; box-shadow: 0 4px 15px rgba(255, 64, 129, 0.3); z-index: 10; position: relative; }
+        #status { color: #999; margin-top: 15px; font-size: 12px; }
     </style>
 </head>
 <body>
 
-    <h1>Shake to Win!</h1>
-    <p>Shake your phone as fast as you can!</p>
-    <div id="count">0</div>
+    <h1>Shake to Race!</h1>
     
-    <button class="btn" onclick="startInference()">Join Game / Start Sensors</button>
+    <div id="track">
+        <img id="runner" src="run1.png" alt="Running Character">
+        <div id="finish"></div>
+    </div>
+
+    <div id="count">Score: <span id="scoreNum">0</span></div>
     
-    <div id="status">Waiting for activation...</div>
+    <button class="btn" onclick="startSensors()">Tap to Join Race</button>
+    <div id="status">Sensors Not Active</div>
 
     <script>
         let score = 0;
         let isShaking = false;
-        const threshold = 15; // Shake intensity threshold (Adjust based on testing)
+        let currentFrame = 1;
+        const threshold = 16; // Shake intensity
+        const finishScore = 100; // How many shakes to reach the end (Adjust as needed)
 
-        function startInference() {
-            // Request iOS Permission
+        // Preload images to avoid flickering
+        const img1 = new Image(); img1.src = "run1.png";
+        const img2 = new Image(); img2.src = "run2.png";
+
+        const runnerImg = document.getElementById('runner');
+        const scoreDisplay = document.getElementById('scoreNum');
+
+        function startSensors() {
+            // iOS Permission Request
             if (typeof DeviceMotionEvent.requestPermission === 'function') {
                 DeviceMotionEvent.requestPermission()
                     .then(permissionState => {
                         if (permissionState === 'granted') {
-                            window.addEventListener('devicemotion', handleMotion);
-                            document.getElementById('status').innerText = "Sensors Active! Start Shaking!";
+                            activateGame();
                         }
                     })
                     .catch(console.error);
             } else {
-                // Non-iOS or older devices
-                window.addEventListener('devicemotion', handleMotion);
-                document.getElementById('status').innerText = "Sensors Active!";
+                // Non-iOS Devices
+                activateGame();
             }
+        }
+
+        function activateGame() {
+            window.addEventListener('devicemotion', handleMotion);
+            document.getElementById('status').innerText = "Sensors Active! SHAKE!";
+            document.querySelector('.btn').style.display = 'none'; // Hide button
         }
 
         function handleMotion(event) {
             let acc = event.accelerationIncludingGravity;
             if (!acc) return;
 
-            // Calculate total acceleration
             let totalAcc = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
 
             if (totalAcc > threshold && !isShaking) {
                 score++;
                 isShaking = true;
-                document.getElementById('count').innerText = score;
+                
+                // --- Part 1: Update Numbers ---
+                scoreDisplay.innerText = score;
+
+                // --- Part 2: Calculate Movement ---
+                // Calculate percentage complete (0 to 100)
+                let progress = (score / finishScore) * 100;
+                // Move the character (subtract width to stay within track)
+                if (progress <= 90) { 
+                    runnerImg.style.left = progress + '%';
+                } else {
+                    runnerImg.style.left = '90%'; // Stay near the end
+                    document.getElementById('status').innerText = "YOU FINISHED!";
+                }
+
+                // --- Part 3: Animate Frame Swap ---
+                // Swap the image source (run1 <-> run2)
+                currentFrame = (currentFrame === 1) ? 2 : 1;
+                runnerImg.src = `run${currentFrame}.png`;
                 
                 // PLACEHOLDER: Firebase Write Logic
                 // firebase.database().ref('players/' + userId).update({ score: score });
 
-                // Small delay to prevent multiple counts per shake
-                setTimeout(() => { isShaking = false; }, 100); 
+                setTimeout(() => { isShaking = false; }, 80); // Prevent multi-triggers
             }
         }
     </script>
